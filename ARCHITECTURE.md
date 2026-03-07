@@ -25,34 +25,31 @@ Directly mirrors WooCommerce's proven HPOS (High-Performance Order Storage) patt
 
 ```
 woocommerce-product-tables-feature-plugin/
-├── woocommerce-product-tables.php           Entry point
+├── woocommerce-product-tables.php           Entry point (activation, deactivation, bootstrap)
+├── uninstall.php                            Clean removal (options, cron; tables only if WPT_REMOVE_ALL_DATA)
+├── ARCHITECTURE.md                          This file
 ├── includes/
-│   ├── class-wpt-autoloader.php             PSR-4 autoloader for src/
-│   ├── class-wpt-bootstrap.php              Activation, deactivation, hook registration
-│   ├── class-wpt-install.php                Table creation via dbDelta
+│   ├── class-wpt-autoloader.php             PSR-4 autoloader for src/ (WPT\ namespace)
+│   ├── class-wpt-bootstrap.php              Singleton — wires stores, sync, cache, query mods
+│   ├── class-wpt-install.php                Table creation via dbDelta, activate/drop helpers
 │   └── Admin/
-│       ├── class-wpt-settings.php           WC_Settings_Page extension (Advanced > Product Tables)
-│       └── class-wpt-status-page.php        Sync status, migration progress UI
+│       └── class-wpt-settings.php           WC_Settings_Page — enable/disable, sync controls, migration status
 ├── src/
 │   ├── DataStores/
-│   │   ├── ProductDataStore.php             Main data store (simple, external, grouped)
-│   │   ├── ProductVariableDataStore.php     Variable product data store
-│   │   ├── ProductVariationDataStore.php    Product variation data store
-│   │   └── ProductGroupedDataStore.php      Grouped product data store
+│   │   ├── ProductDataStore.php             Core data store (~1100 lines) — CRUD, relationships, attributes, downloads, query
+│   │   ├── ProductVariableDataStore.php     Variable product store — children, variation attributes, price sync
+│   │   ├── ProductVariationDataStore.php    Variation store — parent inheritance, reduced columns, title generation
+│   │   └── ProductGroupedDataStore.php      Grouped store — child price sync with post_status filter
 │   ├── Sync/
-│   │   ├── ProductSynchronizer.php          Dual-write engine (HPOS-style)
-│   │   └── BackwardsCompatibility.php       postmeta interception layer
-│   ├── Migration/
-│   │   ├── MigrationController.php          Orchestrates migrate/rollback
-│   │   ├── MigrationProcessor.php           BatchProcessorInterface implementation
-│   │   └── RollbackProcessor.php            Reverse migration path
+│   │   ├── ProductSynchronizer.php          Dual-write engine — mirrors 24+ columns to postmeta
+│   │   ├── BackwardsCompatibility.php       get/update/delete_post_metadata interception layer
+│   │   └── PostData.php                     delete_post hook — cleans all 6 custom tables
 │   ├── Cache/
-│   │   ├── ProductTableCache.php            Object cache for custom table reads
-│   │   └── CacheInvalidator.php             All cache invalidation hooks
+│   │   └── CacheInvalidator.php             Hooks into product lifecycle — clears WPT + WC caches/transients
 │   ├── Query/
-│   │   └── ProductQueryModifier.php         WP_Query modifications for ordering/filtering
+│   │   └── ProductQueryModifier.php         LEFT JOIN wpt_products on WP_Query, custom ordering, stock filter
 │   └── CLI/
-│       └── Commands.php                     WP-CLI: migrate, rollback, status, verify
+│       └── Commands.php                     WP-CLI: migrate, rollback, status, verify (with embedded batch logic)
 └── tests/
     ├── Unit/
     └── Integration/
@@ -240,38 +237,33 @@ When the plugin is **deactivated**, WC falls back to `WC_Product_Data_Store_CPT`
 
 ---
 
-## Migration Engine
+## Migration Engine (CLI-based)
+
+Migration is embedded directly in `WPT\CLI\Commands` for simplicity and reliability:
 
 ```
-MigrationController
-    ├── Phase 1: Create custom tables (idempotent via dbDelta)
-    ├── Phase 2: Batch migrate via Action Scheduler
-    │   └── MigrationProcessor implements BatchProcessorInterface
-    │       ├── get_next_batch_to_process() → SELECTs product IDs not yet in wpt_products
-    │       ├── process_batch() → Read from postmeta, INSERT to custom tables
-    │       └── Batch size: 50 products (configurable via `wpt_migration_batch_size` filter)
-    ├── Phase 3: Verification (compare row counts, spot-check data integrity)
-    └── Rollback: RollbackProcessor
-        └── Re-reads custom tables → verifies postmeta is current → marks tables as inactive
-```
+wp wpt migrate [--batch-size=<n>] [--dry-run]
+    ├── Creates tables if needed (WPT_Install::create_tables)
+    ├── Batches product IDs not yet in wpt_products
+    ├── For each product:
+    │   ├── Reads postmeta → INSERTs to wpt_products via $wpdb->replace()
+    │   ├── Migrates relationships (_upsell_ids, _crosssell_ids, _children, _product_image_gallery)
+    │   ├── Migrates attributes (_product_attributes with taxonomy term lookup)
+    │   └── Migrates downloads (_downloadable_files with UUID download_key)
+    ├── Shows WP-CLI progress bar
+    └── Sets wpt_custom_product_tables_enabled = yes on completion
 
-### Progress Tracking
+wp wpt rollback [--drop-tables]
+    ├── For each migrated product:
+    │   └── Syncs custom table data back to postmeta via ProductSynchronizer
+    ├── Sets wpt_custom_product_tables_enabled = no
+    └── Optionally drops all 6 custom tables
 
-Stored in `wp_options` key `wpt_migration_state`:
+wp wpt status
+    └── Shows: enabled state, table existence, migration count/percentage, sync settings
 
-```json
-{
-    "status": "migrating|verifying|complete|rolling_back|rolled_back|failed",
-    "total": 50000,
-    "processed": 12500,
-    "errors": [
-        {"product_id": 123, "message": "Missing SKU data", "timestamp": "2026-03-07T12:00:00Z"}
-    ],
-    "started_at": "2026-03-07T10:00:00Z",
-    "completed_at": null,
-    "last_processed_id": 45000,
-    "phase": "migrate"
-}
+wp wpt verify
+    └── Compares _sku, _price, _regular_price, _stock, _stock_status between postmeta and custom table
 ```
 
 ---
@@ -287,26 +279,29 @@ Stored in `wp_options` key `wpt_migration_state`:
 
 ---
 
-## Settings (WC > Settings > Advanced > Product Tables)
+## Settings (WC > Settings > Product Tables)
 
-| Setting | Type | Default |
-|---|---|---|
-| Enable custom product tables | checkbox | no |
-| Background sync mode | select: interval / continuous / off | interval |
-| Background sync interval | number (seconds) | 3600 |
-| Migration batch size | number | 50 |
+| Setting | Type | Default | Option Key |
+|---|---|---|---|
+| Enable custom product tables | checkbox | no | `wpt_custom_product_tables_enabled` |
+| Dual-write to postmeta | checkbox | yes | `wpt_dual_write_enabled` |
+| Backwards-compatible meta reads | checkbox | yes | `wpt_backwards_compat_enabled` |
+| Migration batch size | number (5–500) | 50 | `wpt_migration_batch_size` |
+
+When "Enable custom product tables" is toggled on via settings, `WPT_Install::create_tables()` is called immediately. The admin page also shows migration progress (X of Y products) when partially migrated.
 
 ---
 
 ## WP-CLI Commands
 
 ```
-wp wpt migrate         Start/resume migration from postmeta to custom tables
-wp wpt rollback        Roll back to postmeta as authoritative source
-wp wpt status          Show migration/sync status
-wp wpt verify          Verify data integrity between custom tables and postmeta
-wp wpt sync [--force]  Force-sync all products between tables
+wp wpt migrate [--batch-size=50] [--dry-run]    Batch migrate postmeta → custom tables
+wp wpt rollback [--drop-tables]                  Sync back to postmeta, disable tables, optionally drop
+wp wpt status                                    Show enabled/disabled, table existence, migration progress
+wp wpt verify                                    Data integrity check between postmeta and custom tables
 ```
+
+CLI commands are always registered (even when tables are disabled) so `wp wpt migrate` works as the initial setup path.
 
 ---
 

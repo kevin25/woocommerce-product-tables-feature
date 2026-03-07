@@ -32,6 +32,8 @@ define( 'WPT_MIN_PHP_VERSION', '7.4' );
 /**
  * Display admin notice when WooCommerce is not active or version is too low.
  *
+ * @since 2.0.0
+ *
  * @param string $message The notice message.
  */
 function wpt_admin_notice_missing_wc( $message ) {
@@ -46,6 +48,8 @@ function wpt_admin_notice_missing_wc( $message ) {
 
 /**
  * Bootstrap the plugin on plugins_loaded.
+ *
+ * @since 2.0.0
  */
 function wpt_bootstrap() {
 	// PHP version check.
@@ -99,6 +103,8 @@ add_action( 'plugins_loaded', 'wpt_bootstrap', 20 );
 
 /**
  * Run on plugin activation.
+ *
+ * @since 2.0.0
  */
 function wpt_activate() {
 	// Ensure WC is available during activation.
@@ -114,12 +120,20 @@ register_activation_hook( WPT_PLUGIN_FILE, 'wpt_activate' );
 
 /**
  * Run on plugin deactivation.
+ *
+ * @since 2.0.0
  */
 function wpt_deactivate() {
 	// Unschedule background sync actions.
 	if ( function_exists( 'as_unschedule_all_actions' ) ) {
 		as_unschedule_all_actions( 'wpt_background_sync' );
 		as_unschedule_all_actions( 'wpt_migration_batch' );
+	}
+
+	// Clear daily cache cleanup cron.
+	$timestamp = wp_next_scheduled( 'wpt_daily_cache_cleanup' );
+	if ( $timestamp ) {
+		wp_unschedule_event( $timestamp, 'wpt_daily_cache_cleanup' );
 	}
 }
 register_deactivation_hook( WPT_PLUGIN_FILE, 'wpt_deactivate' );

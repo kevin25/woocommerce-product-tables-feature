@@ -16,6 +16,8 @@ class WPT_Install {
 
 	/**
 	 * Run on plugin activation.
+	 *
+	 * @since 2.0.0
 	 */
 	public static function activate() {
 		self::create_tables();
@@ -25,6 +27,8 @@ class WPT_Install {
 
 	/**
 	 * Create all custom product tables using dbDelta.
+	 *
+	 * @since 2.0.0
 	 */
 	public static function create_tables() {
 		global $wpdb;
@@ -39,6 +43,8 @@ class WPT_Install {
 
 	/**
 	 * Get the full SQL schema for all custom tables.
+	 *
+	 * @since 2.0.0
 	 *
 	 * @param string $charset_collate Database charset and collation.
 	 * @return string SQL statements.
@@ -148,6 +154,8 @@ CREATE TABLE {$wpdb->prefix}wpt_product_variation_attribute_values (
 	/**
 	 * Check if all custom tables exist.
 	 *
+	 * @since 2.0.0
+	 *
 	 * @return bool
 	 */
 	public static function tables_exist() {
@@ -174,6 +182,8 @@ CREATE TABLE {$wpdb->prefix}wpt_product_variation_attribute_values (
 
 	/**
 	 * Drop all custom tables. Used during rollback/uninstall.
+	 *
+	 * @since 2.0.0
 	 */
 	public static function drop_tables() {
 		global $wpdb;

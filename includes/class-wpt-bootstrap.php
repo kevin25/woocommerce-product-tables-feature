@@ -31,6 +31,8 @@ class WPT_Bootstrap {
 	/**
 	 * Get singleton instance.
 	 *
+	 * @since 2.0.0
+	 *
 	 * @return WPT_Bootstrap
 	 */
 	public static function instance() {
@@ -47,6 +49,9 @@ class WPT_Bootstrap {
 
 	/**
 	 * Initialize the plugin.
+	 *
+	 * @since 2.0.0
+	 * @internal
 	 */
 	public function init() {
 		$this->enabled = wc_string_to_bool( get_option( 'wpt_custom_product_tables_enabled', 'no' ) );
@@ -55,6 +60,10 @@ class WPT_Bootstrap {
 		if ( is_admin() ) {
 			$this->load_admin();
 		}
+
+		// Always register WP-CLI commands (migrate/rollback/status/verify).
+		$cli = new \WPT\CLI\Commands();
+		$cli->init();
 
 		// Only swap data stores and register sync when enabled.
 		if ( ! $this->enabled ) {
@@ -79,18 +88,24 @@ class WPT_Bootstrap {
 		$cache = new \WPT\Cache\CacheInvalidator();
 		$cache->init();
 
+		// Schedule daily cache cleanup if not already scheduled.
+		if ( ! wp_next_scheduled( 'wpt_daily_cache_cleanup' ) ) {
+			wp_schedule_event( time(), 'daily', 'wpt_daily_cache_cleanup' );
+		}
+
 		// Initialize query modifier.
 		$query = new \WPT\Query\ProductQueryModifier();
 		$query->init();
 
-		// WP-CLI commands.
-		if ( defined( 'WP_CLI' ) && WP_CLI ) {
-			\WP_CLI::add_command( 'wpt', \WPT\CLI\Commands::class );
-		}
+		// Initialize post-delete cleanup.
+		$post_data = new \WPT\Sync\PostData();
+		$post_data->init();
 	}
 
 	/**
 	 * Whether custom product tables are enabled.
+	 *
+	 * @since 2.0.0
 	 *
 	 * @return bool
 	 */
@@ -100,6 +115,8 @@ class WPT_Bootstrap {
 
 	/**
 	 * Load admin components.
+	 *
+	 * @since 2.0.0
 	 */
 	private function load_admin() {
 		require_once WPT_PLUGIN_DIR . 'includes/Admin/class-wpt-settings.php';
@@ -112,6 +129,8 @@ class WPT_Bootstrap {
 
 	/**
 	 * Create custom tables if they don't exist yet.
+	 *
+	 * @since 2.0.0
 	 */
 	private function maybe_create_tables() {
 		$db_version = get_option( 'wpt_db_version', '0' );
@@ -125,6 +144,9 @@ class WPT_Bootstrap {
 
 	/**
 	 * Replace WooCommerce data stores with custom table implementations.
+	 *
+	 * @since 2.0.0
+	 * @internal Hook callback for `woocommerce_data_stores`.
 	 *
 	 * @param array $stores Registered data stores.
 	 * @return array

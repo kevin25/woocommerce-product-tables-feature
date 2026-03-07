@@ -39,6 +39,8 @@ class WPT_Autoloader {
 
 	/**
 	 * Register the autoloader.
+	 *
+	 * @since 2.0.0
 	 */
 	public static function register() {
 		if ( self::$registered ) {
@@ -52,6 +54,8 @@ class WPT_Autoloader {
 
 	/**
 	 * Autoload callback.
+	 *
+	 * @since 2.0.0
 	 *
 	 * @param string $class Fully qualified class name.
 	 */
