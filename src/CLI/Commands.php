@@ -125,10 +125,9 @@ class Commands {
 			}
 
 			foreach ( $product_ids as $product_id ) {
-				$this->migrate_single_product( (int) $product_id );
+				$result = $this->migrate_single_product( (int) $product_id );
 
-				// Check if the insert actually succeeded.
-				if ( $wpdb->last_error ) {
+				if ( false === $result ) {
 					$failed++;
 					$failed_ids[] = (int) $product_id;
 					\WP_CLI::warning( "Failed product #{$product_id}: {$wpdb->last_error}" );
@@ -379,6 +378,7 @@ class Commands {
 	 * @since 2.0.0
 	 *
 	 * @param int $product_id Product ID.
+	 * @return bool True on success, false on failure.
 	 */
 	private function migrate_single_product( $product_id ) {
 		global $wpdb;
@@ -495,6 +495,11 @@ class Commands {
 			$data
 		);
 
+		// Check immediately — subsequent queries would clear last_error.
+		if ( $wpdb->last_error ) {
+			return false;
+		}
+
 		// Migrate relationships.
 		$this->migrate_relationships( $product_id );
 
@@ -503,6 +508,8 @@ class Commands {
 
 		// Migrate downloads.
 		$this->migrate_downloads( $product_id );
+
+		return true;
 	}
 
 	/**
