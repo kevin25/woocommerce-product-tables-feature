@@ -389,6 +389,7 @@ class Commands {
 			$value = get_post_meta( $product_id, $meta_key, true );
 
 			switch ( $column ) {
+				// Boolean columns (NOT NULL).
 				case 'virtual':
 				case 'downloadable':
 				case 'manage_stock':
@@ -396,19 +397,26 @@ class Commands {
 					$data[ $column ] = wc_string_to_bool( $value ) ? 1 : 0;
 					break;
 
+				// Date columns (nullable).
 				case 'date_on_sale_from':
 				case 'date_on_sale_to':
 					$data[ $column ] = is_numeric( $value ) ? gmdate( 'Y-m-d H:i:s', (int) $value ) : null;
 					break;
 
+				// Nullable integer columns.
 				case 'image_id':
-				case 'total_sales':
 				case 'stock_quantity':
 				case 'low_stock_amount':
-				case 'rating_count':
 					$data[ $column ] = '' !== $value ? (int) $value : null;
 					break;
 
+				// NOT NULL integer columns — default to 0.
+				case 'total_sales':
+				case 'rating_count':
+					$data[ $column ] = '' !== $value ? (int) $value : 0;
+					break;
+
+				// Nullable decimal/string columns.
 				case 'price':
 				case 'regular_price':
 				case 'sale_price':
@@ -416,12 +424,35 @@ class Commands {
 				case 'length':
 				case 'width':
 				case 'height':
-				case 'average_rating':
+				case 'purchase_note':
 					$data[ $column ] = '' !== $value ? $value : null;
 					break;
 
+				// NOT NULL decimal — default to 0.
+				case 'average_rating':
+					$data[ $column ] = '' !== $value ? $value : 0;
+					break;
+
+				// NOT NULL string columns — use schema defaults.
+				case 'sku':
+				case 'tax_class':
+					$data[ $column ] = '' !== $value ? $value : '';
+					break;
+
+				case 'tax_status':
+					$data[ $column ] = '' !== $value ? $value : 'taxable';
+					break;
+
+				case 'stock_status':
+					$data[ $column ] = '' !== $value ? $value : 'instock';
+					break;
+
+				case 'backorders':
+					$data[ $column ] = '' !== $value ? $value : 'no';
+					break;
+
 				default:
-					$data[ $column ] = '' !== $value ? $value : null;
+					$data[ $column ] = '' !== $value ? $value : '';
 					break;
 			}
 		}
