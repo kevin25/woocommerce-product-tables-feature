@@ -66,9 +66,18 @@ class ProductVariationDataStore extends ProductDataStore {
 			$product->set_parent_id( 0 );
 		}
 
-		$this->read_attributes( $product );
-		$this->read_downloads( $product );
-		$this->read_product_data( $product );
+		// Check if the variation has been migrated to custom tables.
+		if ( $this->get_product_row_from_db( $product->get_id() ) ) {
+			$this->read_attributes( $product );
+			$this->read_downloads( $product );
+			$this->read_product_data( $product );
+		} else {
+			// Variation not yet migrated — read from postmeta.
+			$this->read_product_data_from_meta( $product );
+			$this->read_attributes_from_meta( $product );
+			$this->read_downloads_from_meta( $product );
+		}
+
 		$this->read_extra_data( $product );
 
 		// Sync variation title with parent if needed.
@@ -171,6 +180,50 @@ class ProductVariationDataStore extends ProductDataStore {
 			);
 
 			// Inherit props with no variation-specific UI.
+			$product->set_sold_individually( $parent->get_sold_individually() );
+			$product->set_tax_status( $parent->get_tax_status() );
+			$product->set_cross_sell_ids( $parent->get_cross_sell_ids() );
+		}
+	}
+
+	/**
+	 * Read product data from postmeta (fallback for unmigrated variations).
+	 *
+	 * Extends the parent method with parent product data inheritance,
+	 * matching what the custom-table read_product_data() does.
+	 *
+	 * @since 2.0.0
+	 *
+	 * @param \WC_Product $product Product object.
+	 */
+	protected function read_product_data_from_meta( &$product ) {
+		parent::read_product_data_from_meta( $product );
+
+		// Inherit parent data (same as custom-table read path).
+		$parent = wc_get_product( $product->get_parent_id() );
+
+		if ( $parent ) {
+			$product->set_parent_data(
+				array(
+					'title'              => $parent->get_title(),
+					'status'             => $parent->get_status(),
+					'sku'                => $parent->get_sku(),
+					'manage_stock'       => $parent->get_manage_stock(),
+					'backorders'         => $parent->get_backorders(),
+					'low_stock_amount'   => $parent->get_low_stock_amount(),
+					'stock_quantity'     => $parent->get_stock_quantity(),
+					'weight'             => $parent->get_weight(),
+					'length'             => $parent->get_length(),
+					'width'              => $parent->get_width(),
+					'height'             => $parent->get_height(),
+					'tax_class'          => $parent->get_tax_class(),
+					'shipping_class_id'  => $parent->get_shipping_class_id(),
+					'image_id'           => $parent->get_image_id(),
+					'purchase_note'      => $parent->get_purchase_note(),
+					'catalog_visibility' => $parent->get_catalog_visibility(),
+				)
+			);
+
 			$product->set_sold_individually( $parent->get_sold_individually() );
 			$product->set_tax_status( $parent->get_tax_status() );
 			$product->set_cross_sell_ids( $parent->get_cross_sell_ids() );
@@ -435,6 +488,13 @@ class ProductVariationDataStore extends ProductDataStore {
 	public function read_attributes( &$product ) {
 		global $wpdb;
 
+		// Check if variation is in the custom table.
+		if ( ! $this->get_product_row_from_db( $product->get_id() ) ) {
+			// Fallback: read variation attributes from postmeta.
+			$this->read_variation_attributes_from_meta( $product );
+			return;
+		}
+
 		$product_attributes = wp_cache_get( 'woocommerce_product_variation_attribute_values_' . $product->get_id(), 'product' );
 
 		if ( false === $product_attributes ) {
@@ -453,6 +513,41 @@ class ProductVariationDataStore extends ProductDataStore {
 			foreach ( $product_attributes as $attr ) {
 				$attributes[ sanitize_title( $attr->attribute_name ) ] = $attr->value;
 			}
+			$product->set_attributes( $attributes );
+		}
+	}
+
+	/**
+	 * Read variation attributes from postmeta (fallback for unmigrated variations).
+	 *
+	 * WC stores variation attributes as individual meta entries: attribute_pa_color, etc.
+	 *
+	 * @since 2.0.0
+	 *
+	 * @param \WC_Product $product Product object.
+	 */
+	protected function read_variation_attributes_from_meta( &$product ) {
+		$parent_id = $product->get_parent_id();
+		if ( ! $parent_id ) {
+			return;
+		}
+
+		$parent_attributes = get_post_meta( $parent_id, '_product_attributes', true );
+		if ( ! is_array( $parent_attributes ) ) {
+			return;
+		}
+
+		$attributes = array();
+		foreach ( $parent_attributes as $slug => $attr_data ) {
+			if ( empty( $attr_data['is_variation'] ) ) {
+				continue;
+			}
+			$meta_key  = 'attribute_' . sanitize_title( $attr_data['name'] );
+			$meta_val  = get_post_meta( $product->get_id(), $meta_key, true );
+			$attributes[ sanitize_title( $attr_data['name'] ) ] = $meta_val ? $meta_val : '';
+		}
+
+		if ( ! empty( $attributes ) ) {
 			$product->set_attributes( $attributes );
 		}
 	}

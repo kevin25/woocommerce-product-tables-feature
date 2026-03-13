@@ -119,9 +119,9 @@ class WPT_Bootstrap {
 	 * @since 2.0.0
 	 */
 	private function load_admin() {
-		require_once WPT_PLUGIN_DIR . 'includes/admin/class-wpt-settings.php';
-
+		// Defer require until the filter fires — WC_Settings_Page isn't loaded yet at plugins_loaded.
 		add_filter( 'woocommerce_get_settings_pages', function ( $settings ) {
+			require_once WPT_PLUGIN_DIR . 'includes/admin/class-wpt-settings.php';
 			$settings[] = new \WPT_Settings();
 			return $settings;
 		} );

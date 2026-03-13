@@ -169,10 +169,19 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 			)
 		);
 
-		$this->read_attributes( $product );
-		$this->read_downloads( $product );
+		// Check if the product has been migrated to custom tables.
+		if ( $this->get_product_row_from_db( $product->get_id() ) ) {
+			$this->read_attributes( $product );
+			$this->read_downloads( $product );
+			$this->read_product_data( $product );
+		} else {
+			// Product not yet migrated — read from postmeta.
+			$this->read_product_data_from_meta( $product );
+			$this->read_attributes_from_meta( $product );
+			$this->read_downloads_from_meta( $product );
+		}
+
 		$this->read_visibility( $product );
-		$this->read_product_data( $product );
 		$this->read_extra_data( $product );
 
 		$product->set_object_read( true );
@@ -669,9 +678,13 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 				)
 			);
 
-			if ( $type ) {
-				wp_cache_set( $cache_key, $type, 'product' );
+			// Fallback to product_type taxonomy for unmigrated products.
+			if ( ! $type ) {
+				$terms = get_the_terms( $product_id, 'product_type' );
+				$type  = ! empty( $terms ) && ! is_wp_error( $terms ) ? sanitize_title( current( $terms )->name ) : 'simple';
 			}
+
+			wp_cache_set( $cache_key, $type, 'product' );
 		}
 
 		return $type ? $type : false;
@@ -833,6 +846,159 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 				$product->{$function}( get_post_meta( $product->get_id(), '_' . $key, true ) );
 			}
 		}
+	}
+
+	/*
+	|--------------------------------------------------------------------------
+	| Postmeta Fallback — for products not yet migrated to custom tables
+	|--------------------------------------------------------------------------
+	*/
+
+	/**
+	 * Read product data from postmeta (fallback for unmigrated products).
+	 *
+	 * Mirrors what WC_Product_Data_Store_CPT::read_product_data() does,
+	 * so products display correctly even before `wp wpt migrate` runs.
+	 *
+	 * @since 2.0.0
+	 *
+	 * @param \WC_Product $product Product object.
+	 */
+	protected function read_product_data_from_meta( &$product ) {
+		$id = $product->get_id();
+
+		$meta_to_props = array(
+			'_sku'                   => 'sku',
+			'_thumbnail_id'          => 'image_id',
+			'_virtual'               => 'virtual',
+			'_downloadable'          => 'downloadable',
+			'_regular_price'         => 'regular_price',
+			'_sale_price'            => 'sale_price',
+			'_sale_price_dates_from' => 'date_on_sale_from',
+			'_sale_price_dates_to'   => 'date_on_sale_to',
+			'total_sales'            => 'total_sales',
+			'_tax_status'            => 'tax_status',
+			'_tax_class'             => 'tax_class',
+			'_stock'                 => 'stock_quantity',
+			'_stock_status'          => 'stock_status',
+			'_manage_stock'          => 'manage_stock',
+			'_backorders'            => 'backorders',
+			'_low_stock_amount'      => 'low_stock_amount',
+			'_sold_individually'     => 'sold_individually',
+			'_weight'                => 'weight',
+			'_length'                => 'length',
+			'_width'                 => 'width',
+			'_height'                => 'height',
+			'_wc_average_rating'     => 'average_rating',
+			'_wc_rating_count'       => 'rating_count',
+			'_purchase_note'         => 'purchase_note',
+			'_wc_review_count'       => 'review_count',
+			'_download_limit'        => 'download_limit',
+			'_download_expiry'       => 'download_expiry',
+		);
+
+		$set_props = array();
+		foreach ( $meta_to_props as $meta_key => $prop ) {
+			$set_props[ $prop ] = get_post_meta( $id, $meta_key, true );
+		}
+
+		// Taxonomy props.
+		$set_props['category_ids']      = $this->get_term_ids( $product, 'product_cat' );
+		$set_props['tag_ids']           = $this->get_term_ids( $product, 'product_tag' );
+		$set_props['shipping_class_id'] = current( $this->get_term_ids( $product, 'product_shipping_class' ) );
+
+		// Relationship props from postmeta.
+		$set_props['upsell_ids']       = array_filter( array_map( 'intval', (array) get_post_meta( $id, '_upsell_ids', true ) ) );
+		$set_props['cross_sell_ids']   = array_filter( array_map( 'intval', (array) get_post_meta( $id, '_crosssell_ids', true ) ) );
+		$set_props['children']         = array_filter( array_map( 'intval', (array) get_post_meta( $id, '_children', true ) ) );
+
+		$gallery_raw = get_post_meta( $id, '_product_image_gallery', true );
+		$set_props['gallery_image_ids'] = $gallery_raw ? array_filter( array_map( 'intval', explode( ',', $gallery_raw ) ) ) : array();
+
+		$product->set_props( $set_props );
+
+		// Set active price based on sale status.
+		if ( $product->is_on_sale( 'edit' ) ) {
+			$product->set_price( $product->get_sale_price( 'edit' ) );
+		} else {
+			$product->set_price( $product->get_regular_price( 'edit' ) );
+		}
+	}
+
+	/**
+	 * Read product attributes from postmeta (fallback for unmigrated products).
+	 *
+	 * @since 2.0.0
+	 *
+	 * @param \WC_Product $product Product object.
+	 */
+	protected function read_attributes_from_meta( &$product ) {
+		$raw_attributes = get_post_meta( $product->get_id(), '_product_attributes', true );
+
+		if ( ! is_array( $raw_attributes ) ) {
+			return;
+		}
+
+		$attributes      = array();
+		$default_attributes = get_post_meta( $product->get_id(), '_default_attributes', true );
+
+		if ( ! is_array( $default_attributes ) ) {
+			$default_attributes = array();
+		}
+
+		foreach ( $raw_attributes as $slug => $attr_data ) {
+			$attribute = new \WC_Product_Attribute();
+			$attribute->set_name( $attr_data['name'] ?? $slug );
+			$attribute->set_position( $attr_data['position'] ?? 0 );
+			$attribute->set_visible( ! empty( $attr_data['is_visible'] ) );
+			$attribute->set_variation( ! empty( $attr_data['is_variation'] ) );
+
+			if ( ! empty( $attr_data['is_taxonomy'] ) ) {
+				$attribute->set_id( wc_attribute_taxonomy_id_by_name( $attr_data['name'] ) );
+				$terms = wp_get_post_terms( $product->get_id(), $attr_data['name'], array( 'fields' => 'ids' ) );
+				$attribute->set_options( is_wp_error( $terms ) ? array() : $terms );
+			} else {
+				$attribute->set_id( 0 );
+				$options = ! empty( $attr_data['value'] )
+					? array_map( 'trim', explode( '|', $attr_data['value'] ) )
+					: array();
+				$attribute->set_options( array_filter( $options ) );
+			}
+
+			$attributes[ $slug ] = $attribute;
+		}
+
+		$product->set_attributes( $attributes );
+
+		if ( ! empty( $default_attributes ) ) {
+			$product->set_default_attributes( $default_attributes );
+		}
+	}
+
+	/**
+	 * Read product downloads from postmeta (fallback for unmigrated products).
+	 *
+	 * @since 2.0.0
+	 *
+	 * @param \WC_Product $product Product object.
+	 */
+	protected function read_downloads_from_meta( &$product ) {
+		$raw = get_post_meta( $product->get_id(), '_downloadable_files', true );
+
+		if ( ! is_array( $raw ) ) {
+			return;
+		}
+
+		$downloads = array();
+		foreach ( $raw as $download_key => $file_data ) {
+			$download = new \WC_Product_Download();
+			$download->set_id( $download_key );
+			$download->set_name( $file_data['name'] ?? '' );
+			$download->set_file( $file_data['file'] ?? '' );
+			$downloads[ $download_key ] = $download;
+		}
+
+		$product->set_downloads( $downloads );
 	}
 
 	/*
@@ -1945,10 +2111,28 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 	public function is_existing_sku( $product_id, $sku ) {
 		global $wpdb;
 
-		return (bool) $wpdb->get_var(
+		// Check custom table.
+		$found = (bool) $wpdb->get_var(
 			$wpdb->prepare(
 				"SELECT product_id FROM {$wpdb->prefix}wpt_products
 				 WHERE sku = %s AND product_id != %d
+				 LIMIT 1",
+				$sku,
+				$product_id
+			)
+		);
+
+		if ( $found ) {
+			return true;
+		}
+
+		// Fallback: check postmeta for unmigrated products.
+		return (bool) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT pm.post_id FROM {$wpdb->postmeta} AS pm
+				 LEFT JOIN {$wpdb->prefix}wpt_products AS wpt ON pm.post_id = wpt.product_id
+				 WHERE pm.meta_key = '_sku' AND pm.meta_value = %s AND pm.post_id != %d
+				 AND wpt.product_id IS NULL
 				 LIMIT 1",
 				$sku,
 				$product_id
@@ -1967,12 +2151,30 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 	public function get_product_id_by_sku( $sku ) {
 		global $wpdb;
 
+		// Check custom table first.
 		$id = $wpdb->get_var(
 			$wpdb->prepare(
 				"SELECT p.product_id FROM {$wpdb->prefix}wpt_products AS p
 				 LEFT JOIN {$wpdb->posts} AS posts ON p.product_id = posts.ID
 				 WHERE p.sku = %s
 				 AND posts.post_status != 'trash'
+				 LIMIT 1",
+				$sku
+			)
+		);
+
+		if ( $id ) {
+			return absint( $id );
+		}
+
+		// Fallback: check postmeta for unmigrated products.
+		$id = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT pm.post_id FROM {$wpdb->postmeta} AS pm
+				 LEFT JOIN {$wpdb->posts} AS posts ON pm.post_id = posts.ID
+				 WHERE pm.meta_key = '_sku' AND pm.meta_value = %s
+				 AND posts.post_status != 'trash'
+				 AND posts.post_type IN ('product', 'product_variation')
 				 LIMIT 1",
 				$sku
 			)
@@ -2001,31 +2203,56 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 	public function find_matching_product_variation( $product, $match_attributes = array() ) {
 		global $wpdb;
 
-		$parent_id    = $product->get_id();
-		$match_count  = count( $match_attributes );
+		$parent_id     = $product->get_id();
 		$variation_ids = $product->get_children();
 
 		if ( empty( $variation_ids ) || empty( $match_attributes ) ) {
 			return 0;
 		}
 
-		// Retrieve all variation attribute values for this product in one query.
-		$placeholders = implode( ',', array_fill( 0, count( $variation_ids ), '%d' ) );
-
-		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		$all_attrs = $wpdb->get_results(
-			$wpdb->prepare(
-				"SELECT variation_id, attribute_name, attribute_value
-				 FROM {$wpdb->prefix}wpt_product_variation_attribute_values
-				 WHERE product_id = %d AND variation_id IN ({$placeholders})",
-				array_merge( array( $parent_id ), $variation_ids )
-			)
-		);
+		// Check if the parent is migrated.
+		$is_migrated = (bool) $this->get_product_row_from_db( $parent_id );
 
 		// Group attributes by variation.
 		$variation_attrs = array();
-		foreach ( $all_attrs as $row ) {
-			$variation_attrs[ $row->variation_id ][ strtolower( $row->attribute_name ) ] = $row->attribute_value;
+
+		if ( $is_migrated ) {
+			// Read from custom table.
+			$placeholders = implode( ',', array_fill( 0, count( $variation_ids ), '%d' ) );
+
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$all_attrs = $wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT variation_id, attribute_name, attribute_value
+					 FROM {$wpdb->prefix}wpt_product_variation_attribute_values
+					 WHERE product_id = %d AND variation_id IN ({$placeholders})",
+					array_merge( array( $parent_id ), $variation_ids )
+				)
+			);
+
+			foreach ( $all_attrs as $row ) {
+				$variation_attrs[ $row->variation_id ][ strtolower( $row->attribute_name ) ] = $row->attribute_value;
+			}
+		} else {
+			// Fallback: read from variation postmeta.
+			$parent_attributes = get_post_meta( $parent_id, '_product_attributes', true );
+			$attr_names        = array();
+
+			if ( is_array( $parent_attributes ) ) {
+				foreach ( $parent_attributes as $attr_data ) {
+					if ( ! empty( $attr_data['is_variation'] ) ) {
+						$attr_names[] = $attr_data['name'];
+					}
+				}
+			}
+
+			foreach ( $variation_ids as $variation_id ) {
+				foreach ( $attr_names as $attr_name ) {
+					$meta_key = 'attribute_' . sanitize_title( $attr_name );
+					$meta_val = get_post_meta( $variation_id, $meta_key, true );
+					$variation_attrs[ $variation_id ][ strtolower( sanitize_title( $attr_name ) ) ] = $meta_val !== false ? $meta_val : '';
+				}
+			}
 		}
 
 		// Try to find exact match.

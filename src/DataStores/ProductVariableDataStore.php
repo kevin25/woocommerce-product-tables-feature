@@ -160,33 +160,49 @@ class ProductVariableDataStore extends ProductDataStore {
 			return $cached_data;
 		}
 
+		// Check if the parent product is in the custom table.
+		$is_migrated = (bool) $this->get_product_row_from_db( $product->get_id() );
+
 		if ( ! empty( $attributes ) ) {
 			foreach ( $attributes as $attribute ) {
 				if ( ! $attribute->get_variation() ) {
 					continue;
 				}
 
-				if ( ! empty( $child_ids ) ) {
-					$format   = array_fill( 0, count( $child_ids ), '%d' );
-					$query_in = '(' . implode( ',', $format ) . ')';
+				$values = array();
 
-					$values = array_unique(
-						$wpdb->get_col(
-							$wpdb->prepare(
-								// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-								"SELECT value FROM {$wpdb->prefix}wpt_product_variation_attribute_values
-								WHERE attribute_name = %s
-								AND product_id = %d
-								AND variation_id IN {$query_in}",
-								array_merge(
-									array( $attribute->get_name(), $product->get_id() ),
-									$child_ids
+				if ( ! empty( $child_ids ) ) {
+					if ( $is_migrated ) {
+						// Read from custom table.
+						$format   = array_fill( 0, count( $child_ids ), '%d' );
+						$query_in = '(' . implode( ',', $format ) . ')';
+
+						$values = array_unique(
+							$wpdb->get_col(
+								$wpdb->prepare(
+									// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+									"SELECT value FROM {$wpdb->prefix}wpt_product_variation_attribute_values
+									WHERE attribute_name = %s
+									AND product_id = %d
+									AND variation_id IN {$query_in}",
+									array_merge(
+										array( $attribute->get_name(), $product->get_id() ),
+										$child_ids
+									)
 								)
 							)
-						)
-					);
-				} else {
-					$values = array();
+						);
+					} else {
+						// Fallback: read from variation postmeta (attribute_pa_color, etc.).
+						$meta_key = 'attribute_' . sanitize_title( $attribute->get_name() );
+						foreach ( $child_ids as $child_id ) {
+							$val = get_post_meta( $child_id, $meta_key, true );
+							if ( '' !== $val && false !== $val ) {
+								$values[] = $val;
+							}
+						}
+						$values = array_unique( $values );
+					}
 				}
 
 				// Empty value indicates all options for the attribute are available.

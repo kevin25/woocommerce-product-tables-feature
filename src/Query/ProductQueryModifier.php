@@ -102,7 +102,8 @@ class ProductQueryModifier {
 		}
 
 		if ( 'yes' === get_option( 'woocommerce_hide_out_of_stock_items' ) && ! is_admin() ) {
-			$where .= " AND wpt.stock_status != 'outofstock' ";
+			// Use IS NULL check so unmigrated products (LEFT JOIN = NULL) are not excluded.
+			$where .= " AND (wpt.stock_status IS NULL OR wpt.stock_status != 'outofstock') ";
 		}
 
 		return $where;
