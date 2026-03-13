@@ -154,36 +154,9 @@ class ProductVariationDataStore extends ProductDataStore {
 			$product->set_price( $product->get_regular_price( 'edit' ) );
 		}
 
-		// Inherit parent data.
-		$parent = wc_get_product( $product->get_parent_id() );
-
-		if ( $parent ) {
-			$product->set_parent_data(
-				array(
-					'title'              => $parent->get_title(),
-					'status'             => $parent->get_status(),
-					'sku'                => $parent->get_sku(),
-					'manage_stock'       => $parent->get_manage_stock(),
-					'backorders'         => $parent->get_backorders(),
-					'low_stock_amount'   => $parent->get_low_stock_amount(),
-					'stock_quantity'     => $parent->get_stock_quantity(),
-					'weight'             => $parent->get_weight(),
-					'length'             => $parent->get_length(),
-					'width'              => $parent->get_width(),
-					'height'             => $parent->get_height(),
-					'tax_class'          => $parent->get_tax_class(),
-					'shipping_class_id'  => $parent->get_shipping_class_id(),
-					'image_id'           => $parent->get_image_id(),
-					'purchase_note'      => $parent->get_purchase_note(),
-					'catalog_visibility' => $parent->get_catalog_visibility(),
-				)
-			);
-
-			// Inherit props with no variation-specific UI.
-			$product->set_sold_individually( $parent->get_sold_individually() );
-			$product->set_tax_status( $parent->get_tax_status() );
-			$product->set_cross_sell_ids( $parent->get_cross_sell_ids() );
-		}
+		// Inherit parent data — read directly to avoid loading the full parent product
+		// (which would trigger loading all children → infinite recursion).
+		$this->inherit_parent_data( $product );
 	}
 
 	/**
@@ -199,35 +172,94 @@ class ProductVariationDataStore extends ProductDataStore {
 	protected function read_product_data_from_meta( &$product ) {
 		parent::read_product_data_from_meta( $product );
 
-		// Inherit parent data (same as custom-table read path).
-		$parent = wc_get_product( $product->get_parent_id() );
+		// Inherit parent data — read directly to avoid loading the full parent product
+		// (which would trigger loading all children → infinite recursion).
+		$this->inherit_parent_data( $product );
+	}
 
-		if ( $parent ) {
-			$product->set_parent_data(
-				array(
-					'title'              => $parent->get_title(),
-					'status'             => $parent->get_status(),
-					'sku'                => $parent->get_sku(),
-					'manage_stock'       => $parent->get_manage_stock(),
-					'backorders'         => $parent->get_backorders(),
-					'low_stock_amount'   => $parent->get_low_stock_amount(),
-					'stock_quantity'     => $parent->get_stock_quantity(),
-					'weight'             => $parent->get_weight(),
-					'length'             => $parent->get_length(),
-					'width'              => $parent->get_width(),
-					'height'             => $parent->get_height(),
-					'tax_class'          => $parent->get_tax_class(),
-					'shipping_class_id'  => $parent->get_shipping_class_id(),
-					'image_id'           => $parent->get_image_id(),
-					'purchase_note'      => $parent->get_purchase_note(),
-					'catalog_visibility' => $parent->get_catalog_visibility(),
-				)
+	/**
+	 * Inherit parent product data into a variation without calling wc_get_product().
+	 *
+	 * Reads parent data directly from the custom table (if migrated) or postmeta,
+	 * plus wp_posts for title/status. This avoids infinite recursion where
+	 * loading a variation → loads parent → loads all children → each child loads parent.
+	 *
+	 * @since 2.0.0
+	 *
+	 * @param \WC_Product $product Variation product object.
+	 */
+	protected function inherit_parent_data( &$product ) {
+		$parent_id = $product->get_parent_id();
+		if ( ! $parent_id ) {
+			return;
+		}
+
+		$parent_post = get_post( $parent_id );
+		if ( ! $parent_post || 'product' !== $parent_post->post_type ) {
+			return;
+		}
+
+		// Try reading from custom table first, fall back to postmeta.
+		$parent_row = $this->get_product_row_from_db( $parent_id );
+
+		if ( $parent_row ) {
+			// Parent is migrated — read from custom table row.
+			$parent_data = array(
+				'title'              => $parent_post->post_title,
+				'status'             => $parent_post->post_status,
+				'sku'                => isset( $parent_row['sku'] ) ? $parent_row['sku'] : '',
+				'manage_stock'       => ! empty( $parent_row['manage_stock'] ),
+				'backorders'         => isset( $parent_row['backorders'] ) ? $parent_row['backorders'] : 'no',
+				'low_stock_amount'   => isset( $parent_row['low_stock_amount'] ) ? $parent_row['low_stock_amount'] : '',
+				'stock_quantity'     => isset( $parent_row['stock_quantity'] ) ? $parent_row['stock_quantity'] : null,
+				'weight'             => isset( $parent_row['weight'] ) ? $parent_row['weight'] : '',
+				'length'             => isset( $parent_row['length'] ) ? $parent_row['length'] : '',
+				'width'              => isset( $parent_row['width'] ) ? $parent_row['width'] : '',
+				'height'             => isset( $parent_row['height'] ) ? $parent_row['height'] : '',
+				'tax_class'          => isset( $parent_row['tax_class'] ) ? $parent_row['tax_class'] : '',
+				'shipping_class_id'  => current( $this->get_term_ids( $product, 'product_shipping_class' ) ),
+				'image_id'           => isset( $parent_row['image_id'] ) ? $parent_row['image_id'] : 0,
+				'purchase_note'      => isset( $parent_row['purchase_note'] ) ? $parent_row['purchase_note'] : '',
+				'catalog_visibility' => get_post_meta( $parent_id, '_visibility', true ) ?: 'visible',
 			);
 
-			$product->set_sold_individually( $parent->get_sold_individually() );
-			$product->set_tax_status( $parent->get_tax_status() );
-			$product->set_cross_sell_ids( $parent->get_cross_sell_ids() );
+			$tax_status       = isset( $parent_row['tax_status'] ) ? $parent_row['tax_status'] : 'taxable';
+			$sold_individually = ! empty( $parent_row['sold_individually'] );
+		} else {
+			// Parent not migrated — read from postmeta.
+			$parent_data = array(
+				'title'              => $parent_post->post_title,
+				'status'             => $parent_post->post_status,
+				'sku'                => get_post_meta( $parent_id, '_sku', true ),
+				'manage_stock'       => 'yes' === get_post_meta( $parent_id, '_manage_stock', true ),
+				'backorders'         => get_post_meta( $parent_id, '_backorders', true ) ?: 'no',
+				'low_stock_amount'   => get_post_meta( $parent_id, '_low_stock_amount', true ),
+				'stock_quantity'     => get_post_meta( $parent_id, '_stock', true ),
+				'weight'             => get_post_meta( $parent_id, '_weight', true ),
+				'length'             => get_post_meta( $parent_id, '_length', true ),
+				'width'              => get_post_meta( $parent_id, '_width', true ),
+				'height'             => get_post_meta( $parent_id, '_height', true ),
+				'tax_class'          => get_post_meta( $parent_id, '_tax_class', true ),
+				'shipping_class_id'  => current( $this->get_term_ids( $product, 'product_shipping_class' ) ),
+				'image_id'           => get_post_meta( $parent_id, '_thumbnail_id', true ),
+				'purchase_note'      => get_post_meta( $parent_id, '_purchase_note', true ),
+				'catalog_visibility' => get_post_meta( $parent_id, '_visibility', true ) ?: 'visible',
+			);
+
+			$tax_status       = get_post_meta( $parent_id, '_tax_status', true ) ?: 'taxable';
+			$sold_individually = 'yes' === get_post_meta( $parent_id, '_sold_individually', true );
 		}
+
+		// Read cross-sell IDs from postmeta (not stored in custom table).
+		$cross_sell_ids = get_post_meta( $parent_id, '_crosssell_ids', true );
+		if ( ! is_array( $cross_sell_ids ) ) {
+			$cross_sell_ids = array();
+		}
+
+		$product->set_parent_data( $parent_data );
+		$product->set_sold_individually( $sold_individually );
+		$product->set_tax_status( $tax_status );
+		$product->set_cross_sell_ids( $cross_sell_ids );
 	}
 
 	/**
@@ -644,6 +676,9 @@ class ProductVariationDataStore extends ProductDataStore {
 	 * Variation objects store slug=>value pairs (e.g., 'pa_color' => 'red').
 	 * We need the canonical attribute name for storage.
 	 *
+	 * Reads parent attributes directly from postmeta to avoid wc_get_product()
+	 * which would trigger infinite recursion (variation → parent → children → …).
+	 *
 	 * @since 2.0.0
 	 *
 	 * @param \WC_Product $product       Product object (variation).
@@ -651,17 +686,21 @@ class ProductVariationDataStore extends ProductDataStore {
 	 * @return string|false Attribute name or false if not found.
 	 */
 	protected function resolve_attribute_name( &$product, $attribute_slug ) {
-		$parent = wc_get_product( $product->get_parent_id() );
-
-		if ( ! $parent ) {
+		$parent_id = $product->get_parent_id();
+		if ( ! $parent_id ) {
 			return false;
 		}
 
-		$parent_attributes = $parent->get_attributes();
+		// Read parent attributes directly from postmeta — no wc_get_product().
+		$parent_attributes = get_post_meta( $parent_id, '_product_attributes', true );
+		if ( ! is_array( $parent_attributes ) ) {
+			return false;
+		}
 
-		foreach ( $parent_attributes as $attribute ) {
-			if ( sanitize_title( $attribute->get_name() ) === $attribute_slug ) {
-				return $attribute->get_name();
+		foreach ( $parent_attributes as $attr_data ) {
+			$name = isset( $attr_data['name'] ) ? $attr_data['name'] : '';
+			if ( sanitize_title( $name ) === $attribute_slug ) {
+				return $name;
 			}
 		}
 
