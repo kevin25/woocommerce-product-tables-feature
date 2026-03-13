@@ -1584,7 +1584,7 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 		// Handle date queries for custom table columns.
 		foreach ( array( 'date_on_sale_from', 'date_on_sale_to' ) as $date_column ) {
 			if ( isset( $query_vars[ $date_column ] ) ) {
-				$wpt_query[ $date_column ] = $this->parse_date_for_wp_query( $query_vars[ $date_column ], $date_column );
+				$wpt_query[ $date_column ] = $this->parse_date_for_custom_table( $query_vars[ $date_column ], $date_column );
 			}
 		}
 
@@ -1611,7 +1611,7 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 	 * @param string $column    Column name.
 	 * @return array Array of ['value' => ..., 'compare' => '='].
 	 */
-	public function parse_date_for_wp_query( $raw_value, $column ) {
+	protected function parse_date_for_custom_table( $raw_value, $column ) {
 		if ( is_array( $raw_value ) ) {
 			$parsed = array();
 
