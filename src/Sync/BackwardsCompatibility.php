@@ -220,26 +220,39 @@ class BackwardsCompatibility {
 	private function get_product_column( $product_id, $column ) {
 		global $wpdb;
 
-		$cache_key  = 'woocommerce_product_' . $product_id;
-		$cache_data = wp_cache_get( $cache_key, 'product' );
-
-		if ( is_array( $cache_data ) && array_key_exists( $column, $cache_data ) ) {
-			return $cache_data[ $column ];
-		}
-
 		$allowed_columns = array_values( $this->meta_to_column );
 		if ( ! in_array( $column, $allowed_columns, true ) ) {
 			return null;
 		}
 
-		$result = $wpdb->get_var(
-			$wpdb->prepare(
-				"SELECT `{$column}` FROM {$wpdb->prefix}wpt_products WHERE product_id = %d",
-				$product_id
-			)
-		);
+		// Use a dedicated cache key to avoid collisions with WC's product cache.
+		$cache_key  = 'wpt_row_' . $product_id;
+		$cache_data = wp_cache_get( $cache_key, 'wpt' );
 
-		return $result;
+		if ( false === $cache_data ) {
+			// Read the full row in one query — all subsequent meta reads are cached.
+			$cache_data = $wpdb->get_row(
+				$wpdb->prepare(
+					"SELECT * FROM {$wpdb->prefix}wpt_products WHERE product_id = %d",
+					$product_id
+				),
+				ARRAY_A
+			);
+
+			if ( ! $cache_data ) {
+				// No row — cache empty array to prevent repeated queries.
+				wp_cache_set( $cache_key, array(), 'wpt' );
+				return null;
+			}
+
+			wp_cache_set( $cache_key, $cache_data, 'wpt' );
+		}
+
+		if ( empty( $cache_data ) || ! array_key_exists( $column, $cache_data ) ) {
+			return null;
+		}
+
+		return $cache_data[ $column ];
 	}
 
 	/**
@@ -265,7 +278,8 @@ class BackwardsCompatibility {
 			array( 'product_id' => $product_id )
 		);
 
-		// Invalidate cache.
+		// Invalidate caches.
+		wp_cache_delete( 'wpt_row_' . $product_id, 'wpt' );
 		wp_cache_delete( 'woocommerce_product_' . $product_id, 'product' );
 	}
 
