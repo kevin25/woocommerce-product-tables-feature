@@ -500,7 +500,7 @@ class ProductVariationDataStore extends ProductDataStore {
 		if ( false === $product_attributes ) {
 			$product_attributes = $wpdb->get_results(
 				$wpdb->prepare(
-					"SELECT attribute_name, value FROM {$wpdb->prefix}wpt_product_variation_attribute_values WHERE variation_id = %d",
+					"SELECT attribute_name, attribute_value FROM {$wpdb->prefix}wpt_product_variation_attribute_values WHERE variation_id = %d",
 					$product->get_id()
 				)
 			);
@@ -511,7 +511,7 @@ class ProductVariationDataStore extends ProductDataStore {
 		if ( ! empty( $product_attributes ) ) {
 			$attributes = array();
 			foreach ( $product_attributes as $attr ) {
-				$attributes[ sanitize_title( $attr->attribute_name ) ] = $attr->value;
+				$attributes[ sanitize_title( $attr->attribute_name ) ] = $attr->attribute_value;
 			}
 			$product->set_attributes( $attributes );
 		}
@@ -580,11 +580,11 @@ class ProductVariationDataStore extends ProductDataStore {
 		$existing_attributes = wp_list_pluck(
 			$wpdb->get_results(
 				$wpdb->prepare(
-					"SELECT attribute_name, value FROM {$wpdb->prefix}wpt_product_variation_attribute_values WHERE variation_id = %d",
+					"SELECT attribute_name, attribute_value FROM {$wpdb->prefix}wpt_product_variation_attribute_values WHERE variation_id = %d",
 					$variation_id
 				)
 			),
-			'value',
+			'attribute_value',
 			'attribute_name'
 		);
 
@@ -602,7 +602,7 @@ class ProductVariationDataStore extends ProductDataStore {
 				if ( isset( $existing_attributes[ $attribute_name ] ) ) {
 					$wpdb->update(
 						"{$wpdb->prefix}wpt_product_variation_attribute_values",
-						array( 'value' => $attribute_value ),
+						array( 'attribute_value' => $attribute_value ),
 						array(
 							'attribute_name' => $attribute_name,
 							'variation_id'   => $variation_id,
@@ -612,10 +612,10 @@ class ProductVariationDataStore extends ProductDataStore {
 					$wpdb->insert(
 						"{$wpdb->prefix}wpt_product_variation_attribute_values",
 						array(
-							'product_id'     => $parent_id,
-							'variation_id'   => $variation_id,
-							'attribute_name' => $attribute_name,
-							'value'          => $attribute_value,
+							'product_id'      => $parent_id,
+							'variation_id'    => $variation_id,
+							'attribute_name'  => $attribute_name,
+							'attribute_value' => $attribute_value,
 						)
 					);
 				}

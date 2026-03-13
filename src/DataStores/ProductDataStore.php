@@ -1381,7 +1381,7 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 	 * @param array  $exclude            Product IDs to exclude.
 	 * @return array Product IDs.
 	 */
-	public function search_products( $term, $type = '', $include_variations = false, $all_statuses = false, $limit = null, $include = array(), $exclude = array() ) {
+	public function search_products( $term, $type = '', $include_variations = false, $all_statuses = false, $limit = null, $include = null, $exclude = null ) {
 		global $wpdb;
 
 		$post_types   = $include_variations ? array( 'product', 'product_variation' ) : array( 'product' );
@@ -1451,7 +1451,7 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 	 * @param array $query_vars WC_Product_Query args.
 	 * @return array
 	 */
-	public function get_products( $query_vars ) {
+	public function get_products( $query_vars = array() ) {
 		// This is an alias for query() — used by wc_get_products.
 		$query_args = $this->get_wp_query_args( $query_vars );
 
@@ -1841,21 +1841,84 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 	}
 
 	/**
+	 * Read current stock quantity from the custom table.
+	 *
+	 * Called by WC core immediately after update_product_stock() to
+	 * refresh the product object's stock_quantity property.
+	 *
+	 * @since 2.0.0
+	 *
+	 * @param \WC_Product $product   Product object.
+	 * @param int|float   $new_stock Optional new stock value (already set in DB).
+	 * @return int|float
+	 */
+	public function read_stock_quantity( &$product, $new_stock = null ) {
+		if ( ! is_null( $new_stock ) ) {
+			$product->set_stock_quantity( wc_stock_amount( $new_stock ) );
+			return wc_stock_amount( $new_stock );
+		}
+
+		global $wpdb;
+
+		$stock = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT stock_quantity FROM {$wpdb->prefix}wpt_products WHERE product_id = %d",
+				$product->get_id()
+			)
+		);
+
+		$stock = wc_stock_amount( $stock );
+		$product->set_stock_quantity( $stock );
+
+		return $stock;
+	}
+
+	/**
 	 * Update a product's total sales count.
 	 *
 	 * @since 2.0.0
 	 *
-	 * @param int $product_id Product ID.
+	 * @param int      $product_id Product ID.
+	 * @param int|null $quantity   Quantity to adjust. Default null (1).
+	 * @param string   $operation  Operation: 'set', 'increase', or 'decrease'. Default 'set'.
 	 */
-	public function update_product_sales( $product_id ) {
+	public function update_product_sales( $product_id, $quantity = null, $operation = 'set' ) {
 		global $wpdb;
 
-		$wpdb->query(
-			$wpdb->prepare(
-				"UPDATE {$wpdb->prefix}wpt_products SET total_sales = total_sales + 1 WHERE product_id = %d",
-				$product_id
-			)
-		);
+		$quantity = is_null( $quantity ) ? 1 : absint( $quantity );
+
+		switch ( $operation ) {
+			case 'increase':
+				$wpdb->query(
+					$wpdb->prepare(
+						"UPDATE {$wpdb->prefix}wpt_products SET total_sales = total_sales + %d WHERE product_id = %d",
+						$quantity,
+						$product_id
+					)
+				);
+				break;
+			case 'decrease':
+				$wpdb->query(
+					$wpdb->prepare(
+						"UPDATE {$wpdb->prefix}wpt_products SET total_sales = GREATEST(0, total_sales - %d) WHERE product_id = %d",
+						$quantity,
+						$product_id
+					)
+				);
+				break;
+			default: // 'set'
+				$wpdb->update(
+					"{$wpdb->prefix}wpt_products",
+					array( 'total_sales' => $quantity ),
+					array( 'product_id' => $product_id )
+				);
+				break;
+		}
+
+		// Sync to postmeta.
+		update_post_meta( $product_id, 'total_sales', $wpdb->get_var(
+			$wpdb->prepare( "SELECT total_sales FROM {$wpdb->prefix}wpt_products WHERE product_id = %d", $product_id )
+		) );
 
 		wp_cache_delete( 'woocommerce_product_' . $product_id, 'product' );
 	}
@@ -1961,27 +2024,22 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 	}
 
 	/**
-	 * Get SQL for stock queries (used by WC for stock management).
+	 * Return a query string for checking product stock.
+	 *
+	 * Used by WC's ReserveStock class during checkout.
 	 *
 	 * @since 2.0.0
 	 *
-	 * @param string $status  Stock status.
-	 * @param int    $exclude Exclude product ID.
-	 * @return string SQL.
+	 * @param int $product_id Product ID.
+	 * @return string SQL query returning stock_quantity for the product.
 	 */
-	public function get_query_for_stock( $status, $exclude = 0 ) {
+	public function get_query_for_stock( $product_id ) {
 		global $wpdb;
 
-		$query = $wpdb->prepare(
-			"SELECT product_id, stock_quantity FROM {$wpdb->prefix}wpt_products WHERE stock_status = %s AND manage_stock = 1",
-			$status
+		return $wpdb->prepare(
+			"SELECT stock_quantity FROM {$wpdb->prefix}wpt_products WHERE product_id = %d AND manage_stock = 1",
+			$product_id
 		);
-
-		if ( $exclude ) {
-			$query .= $wpdb->prepare( ' AND product_id != %d', $exclude );
-		}
-
-		return $query;
 	}
 
 	/*

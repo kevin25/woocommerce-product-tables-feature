@@ -181,7 +181,7 @@ class ProductVariableDataStore extends ProductDataStore {
 							$wpdb->get_col(
 								$wpdb->prepare(
 									// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-									"SELECT value FROM {$wpdb->prefix}wpt_product_variation_attribute_values
+									"SELECT attribute_value FROM {$wpdb->prefix}wpt_product_variation_attribute_values
 									WHERE attribute_name = %s
 									AND product_id = %d
 									AND variation_id IN {$query_in}",
@@ -670,6 +670,26 @@ class ProductVariableDataStore extends ProductDataStore {
 		}
 
 		delete_transient( 'wc_product_children_' . $product_id );
+	}
+
+	/**
+	 * Create all possible product variations for a variable product.
+	 *
+	 * Delegates to WC's core CPT implementation since it handles
+	 * the combinatorial logic. Our data store hooks will pick up
+	 * the new variations and write them to the custom tables.
+	 *
+	 * @since 2.0.0
+	 *
+	 * @param \WC_Product $product        Variable product object.
+	 * @param int         $limit          Max variations to create. Default -1 (unlimited).
+	 * @param array       $default_values Default attribute values.
+	 * @param array       $metadata       Additional metadata for variations.
+	 * @return int Number of variations created.
+	 */
+	public function create_all_product_variations( $product, $limit = -1, $default_values = array(), $metadata = array() ) {
+		$cpt_store = new \WC_Product_Variable_Data_Store_CPT();
+		return $cpt_store->create_all_product_variations( $product, $limit, $default_values, $metadata );
 	}
 
 	/**

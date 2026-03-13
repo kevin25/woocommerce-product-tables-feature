@@ -10,7 +10,7 @@
  * Tested up to: 6.8
  * Requires PHP: 7.4
  * WC requires at least: 8.0
- * WC tested up to: 10.5
+ * WC tested up to: 10.6
  *
  * Text Domain: woocommerce-product-tables
  * Domain Path: /languages/
