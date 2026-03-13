@@ -45,6 +45,7 @@ class PostData {
 		global $wpdb;
 
 		// Clear caches first.
+		wp_cache_delete( 'wpt_row_' . $post_id, 'wpt' );
 		wp_cache_delete( 'woocommerce_product_' . $post_id, 'product' );
 		wp_cache_delete( $post_id, 'products' );
 		wp_cache_delete( 'woocommerce_product_attributes_' . $post_id, 'product' );

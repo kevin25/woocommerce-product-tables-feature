@@ -105,7 +105,10 @@ class CacheInvalidator {
 	 * @param int $product_id Product ID.
 	 */
 	public function clear_product_caches( $product_id ) {
-		// WP object cache (product row).
+		// Custom table row cache.
+		wp_cache_delete( 'wpt_row_' . $product_id, 'wpt' );
+
+		// WP object cache.
 		wp_cache_delete( 'woocommerce_product_' . $product_id, 'product' );
 
 		// WC core product cache group.

@@ -416,7 +416,9 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 	protected function get_product_row_from_db( $product_id ) {
 		global $wpdb;
 
-		$data = wp_cache_get( 'woocommerce_product_' . $product_id, 'product' );
+		// Use dedicated cache key to avoid collision with WC's product object cache.
+		$cache_key = 'wpt_row_' . $product_id;
+		$data      = wp_cache_get( $cache_key, 'wpt' );
 
 		if ( false === $data ) {
 			$data = $wpdb->get_row(
@@ -427,12 +429,11 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 				ARRAY_A
 			);
 
-			if ( $data ) {
-				wp_cache_set( 'woocommerce_product_' . $product_id, $data, 'product' );
-			}
+			// Cache result (empty array for miss) to prevent repeated queries.
+			wp_cache_set( $cache_key, $data ? $data : array(), 'wpt' );
 		}
 
-		return $data ? $data : false;
+		return ! empty( $data ) ? $data : false;
 	}
 
 	/**
@@ -646,14 +647,20 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 	 * @param \WC_Product $product Product object.
 	 */
 	protected function clear_caches( &$product ) {
-		wp_cache_delete( 'woocommerce_product_' . $product->get_id(), 'product' );
-		wp_cache_delete( 'woocommerce_product_relationships_' . $product->get_id(), 'product' );
-		wp_cache_delete( 'woocommerce_product_downloads_' . $product->get_id(), 'product' );
-		wp_cache_delete( 'woocommerce_product_attributes_' . $product->get_id(), 'product' );
+		$id = $product->get_id();
 
-		wc_delete_product_transients( $product->get_id() );
+		// Custom table caches.
+		wp_cache_delete( 'wpt_row_' . $id, 'wpt' );
 
-		\WC_Cache_Helper::invalidate_cache_group( 'product_' . $product->get_id() );
+		// WC standard caches.
+		wp_cache_delete( 'woocommerce_product_' . $id, 'product' );
+		wp_cache_delete( 'woocommerce_product_relationships_' . $id, 'product' );
+		wp_cache_delete( 'woocommerce_product_downloads_' . $id, 'product' );
+		wp_cache_delete( 'woocommerce_product_attributes_' . $id, 'product' );
+
+		wc_delete_product_transients( $id );
+
+		\WC_Cache_Helper::invalidate_cache_group( 'product_' . $id );
 	}
 
 	/**
