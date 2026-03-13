@@ -94,17 +94,17 @@ class Commands {
 			return;
 		}
 
-		$progress   = \WP_CLI\Utils\make_progress_bar( 'Migrating products', $remaining );
-		$migrated   = 0;
-		$failed     = 0;
-		$failed_ids = array();
+		$progress      = \WP_CLI\Utils\make_progress_bar( 'Migrating products', $remaining );
+		$migrated      = 0;
+		$failed        = 0;
+		$processed_ids = array();
 
 		while ( true ) {
-			// Build exclusion clause for products that already failed.
+			// Exclude ALL previously processed IDs to prevent infinite loops.
 			$exclude_sql = '';
-			if ( ! empty( $failed_ids ) ) {
-				$placeholders = implode( ',', array_fill( 0, count( $failed_ids ), '%d' ) );
-				$exclude_sql  = $wpdb->prepare( " AND p.ID NOT IN ({$placeholders})", $failed_ids );
+			if ( ! empty( $processed_ids ) ) {
+				$id_list     = implode( ',', array_map( 'intval', $processed_ids ) );
+				$exclude_sql = " AND p.ID NOT IN ({$id_list})";
 			}
 
 			$product_ids = $wpdb->get_col(
@@ -125,12 +125,14 @@ class Commands {
 			}
 
 			foreach ( $product_ids as $product_id ) {
-				$result = $this->migrate_single_product( (int) $product_id );
+				$pid    = (int) $product_id;
+				$result = $this->migrate_single_product( $pid );
+
+				$processed_ids[] = $pid;
 
 				if ( false === $result ) {
 					$failed++;
-					$failed_ids[] = (int) $product_id;
-					\WP_CLI::warning( "Failed product #{$product_id}: {$wpdb->last_error}" );
+					\WP_CLI::warning( "Failed product #{$pid}: {$wpdb->last_error}" );
 				} else {
 					$migrated++;
 				}
