@@ -74,7 +74,7 @@ class ProductVariationDataStore extends ProductDataStore {
 		} else {
 			// Variation not yet migrated — read from postmeta.
 			$this->read_product_data_from_meta( $product );
-			$this->read_attributes_from_meta( $product );
+			$this->read_variation_attributes_from_meta( $product );
 			$this->read_downloads_from_meta( $product );
 		}
 
@@ -202,6 +202,12 @@ class ProductVariationDataStore extends ProductDataStore {
 		// Try reading from custom table first, fall back to postmeta.
 		$parent_row = $this->get_product_row_from_db( $parent_id );
 
+		// Get parent's shipping class from taxonomy (not the variation's).
+		$parent_shipping_terms = get_the_terms( $parent_id, 'product_shipping_class' );
+		$parent_shipping_class = ( ! empty( $parent_shipping_terms ) && ! is_wp_error( $parent_shipping_terms ) )
+			? (int) current( $parent_shipping_terms )->term_id
+			: 0;
+
 		if ( $parent_row ) {
 			// Parent is migrated — read from custom table row.
 			$parent_data = array(
@@ -217,7 +223,7 @@ class ProductVariationDataStore extends ProductDataStore {
 				'width'              => isset( $parent_row['width'] ) ? $parent_row['width'] : '',
 				'height'             => isset( $parent_row['height'] ) ? $parent_row['height'] : '',
 				'tax_class'          => isset( $parent_row['tax_class'] ) ? $parent_row['tax_class'] : '',
-				'shipping_class_id'  => current( $this->get_term_ids( $product, 'product_shipping_class' ) ),
+				'shipping_class_id'  => $parent_shipping_class,
 				'image_id'           => isset( $parent_row['image_id'] ) ? $parent_row['image_id'] : 0,
 				'purchase_note'      => isset( $parent_row['purchase_note'] ) ? $parent_row['purchase_note'] : '',
 				'catalog_visibility' => get_post_meta( $parent_id, '_visibility', true ) ?: 'visible',
@@ -240,7 +246,7 @@ class ProductVariationDataStore extends ProductDataStore {
 				'width'              => get_post_meta( $parent_id, '_width', true ),
 				'height'             => get_post_meta( $parent_id, '_height', true ),
 				'tax_class'          => get_post_meta( $parent_id, '_tax_class', true ),
-				'shipping_class_id'  => current( $this->get_term_ids( $product, 'product_shipping_class' ) ),
+				'shipping_class_id'  => $parent_shipping_class,
 				'image_id'           => get_post_meta( $parent_id, '_thumbnail_id', true ),
 				'purchase_note'      => get_post_meta( $parent_id, '_purchase_note', true ),
 				'catalog_visibility' => get_post_meta( $parent_id, '_visibility', true ) ?: 'visible',

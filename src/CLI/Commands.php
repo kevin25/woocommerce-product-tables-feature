@@ -146,6 +146,9 @@ class Commands {
 
 		$progress->finish();
 
+		// Sync stock status for variable products based on children.
+		$this->sync_variable_stock_status();
+
 		update_option( 'wpt_custom_product_tables_enabled', 'yes' );
 
 		if ( $failed > 0 ) {
@@ -688,6 +691,63 @@ class Commands {
 	 *
 	 * @since 2.0.0
 	 */
+	/**
+	 * Sync stock status for variable products based on their children.
+	 *
+	 * After migration, variable products may have stale stock_status from
+	 * postmeta. This recalculates based on child variation stock statuses.
+	 *
+	 * @since 2.0.0
+	 */
+	private function sync_variable_stock_status() {
+		global $wpdb;
+
+		\WP_CLI::log( 'Syncing variable product stock status...' );
+
+		// Set variable products to 'instock' if any published child variation is in stock.
+		$updated = $wpdb->query(
+			"UPDATE {$wpdb->prefix}wpt_products p
+			SET p.stock_status = 'instock'
+			WHERE p.type = 'variable'
+			AND p.stock_status != 'instock'
+			AND EXISTS (
+				SELECT 1 FROM {$wpdb->prefix}wpt_products c
+				INNER JOIN {$wpdb->posts} cp ON c.product_id = cp.ID
+				WHERE cp.post_parent = p.product_id
+				AND cp.post_status IN ('publish', 'private')
+				AND c.stock_status = 'instock'
+			)"
+		);
+
+		// Set variable products to 'onbackorder' if no child is in stock but some are on backorder.
+		$wpdb->query(
+			"UPDATE {$wpdb->prefix}wpt_products p
+			SET p.stock_status = 'onbackorder'
+			WHERE p.type = 'variable'
+			AND p.stock_status = 'outofstock'
+			AND EXISTS (
+				SELECT 1 FROM {$wpdb->prefix}wpt_products c
+				INNER JOIN {$wpdb->posts} cp ON c.product_id = cp.ID
+				WHERE cp.post_parent = p.product_id
+				AND cp.post_status IN ('publish', 'private')
+				AND c.stock_status = 'onbackorder'
+			)"
+		);
+
+		// Also fix any variations with empty stock_status — default to 'instock'.
+		$fixed = $wpdb->query(
+			"UPDATE {$wpdb->prefix}wpt_products
+			SET stock_status = 'instock'
+			WHERE stock_status = '' OR stock_status IS NULL"
+		);
+
+		if ( $fixed ) {
+			\WP_CLI::log( "Fixed {$fixed} products with empty stock_status." );
+		}
+
+		\WP_CLI::log( "Stock status synced. {$updated} variable products updated." );
+	}
+
 	private function clear_batch_caches() {
 		wp_cache_flush();
 
