@@ -94,11 +94,19 @@ class Commands {
 			return;
 		}
 
-		$progress = \WP_CLI\Utils\make_progress_bar( 'Migrating products', $remaining );
-		$offset   = 0;
-		$migrated = 0;
+		$progress   = \WP_CLI\Utils\make_progress_bar( 'Migrating products', $remaining );
+		$migrated   = 0;
+		$failed     = 0;
+		$failed_ids = array();
 
 		while ( true ) {
+			// Build exclusion clause for products that already failed.
+			$exclude_sql = '';
+			if ( ! empty( $failed_ids ) ) {
+				$placeholders = implode( ',', array_fill( 0, count( $failed_ids ), '%d' ) );
+				$exclude_sql  = $wpdb->prepare( " AND p.ID NOT IN ({$placeholders})", $failed_ids );
+			}
+
 			$product_ids = $wpdb->get_col(
 				$wpdb->prepare(
 					"SELECT p.ID FROM {$wpdb->posts} p
@@ -106,6 +114,7 @@ class Commands {
 					 WHERE p.post_type IN ('product', 'product_variation')
 					 AND p.post_status != 'auto-draft'
 					 AND wpt.product_id IS NULL
+					 {$exclude_sql}
 					 LIMIT %d",
 					$batch_size
 				)
@@ -117,7 +126,16 @@ class Commands {
 
 			foreach ( $product_ids as $product_id ) {
 				$this->migrate_single_product( (int) $product_id );
-				$migrated++;
+
+				// Check if the insert actually succeeded.
+				if ( $wpdb->last_error ) {
+					$failed++;
+					$failed_ids[] = (int) $product_id;
+					\WP_CLI::warning( "Failed product #{$product_id}: {$wpdb->last_error}" );
+				} else {
+					$migrated++;
+				}
+
 				$progress->tick();
 			}
 
@@ -128,6 +146,10 @@ class Commands {
 		$progress->finish();
 
 		update_option( 'wpt_custom_product_tables_enabled', 'yes' );
+
+		if ( $failed > 0 ) {
+			\WP_CLI::warning( "{$failed} products failed to migrate. Re-run to retry or check the errors above." );
+		}
 
 		\WP_CLI::success( "Migrated {$migrated} products to custom tables." );
 	}
@@ -327,6 +349,12 @@ class Commands {
 				$meta_value  = (string) $meta_value;
 				$table_value = (string) $table_value;
 
+				// Normalize numeric values — DECIMAL(10,4) adds trailing zeros.
+				if ( is_numeric( $meta_value ) && is_numeric( $table_value ) ) {
+					$meta_value  = rtrim( rtrim( $meta_value, '0' ), '.' );
+					$table_value = rtrim( rtrim( $table_value, '0' ), '.' );
+				}
+
 				if ( $meta_value !== $table_value ) {
 					\WP_CLI::warning( "Mismatch: Product #{$product_id} — {$meta_key}: meta='{$meta_value}' vs table='{$table_value}'" );
 					$mismatches++;
@@ -387,6 +415,11 @@ class Commands {
 
 		foreach ( $meta_to_column as $meta_key => $column ) {
 			$value = get_post_meta( $product_id, $meta_key, true );
+
+			// get_post_meta returns false when the key doesn't exist — normalize to ''.
+			if ( false === $value ) {
+				$value = '';
+			}
 
 			switch ( $column ) {
 				// Boolean columns (NOT NULL).
