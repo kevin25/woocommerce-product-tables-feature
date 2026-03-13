@@ -60,13 +60,8 @@ class ProductQueryModifier {
 		add_filter( 'posts_where', array( $this, 'add_stock_status_where' ), 10, 2 );
 		add_filter( 'posts_orderby', array( $this, 'add_custom_orderby' ), 10, 2 );
 
-		// Clean up after the query runs.
-		add_action( 'loop_end', function() {
-			remove_filter( 'posts_join', array( $this, 'add_product_table_join' ), 10 );
-			remove_filter( 'posts_where', array( $this, 'add_stock_status_where' ), 10 );
-			remove_filter( 'posts_orderby', array( $this, 'add_custom_orderby' ), 10 );
-			$this->joined = false;
-		} );
+		// Clean up after the query runs — posts_results fires for all queries (including non-loop).
+		add_filter( 'posts_results', array( $this, 'cleanup_clause_filters' ), 10, 2 );
 	}
 
 	/**
@@ -204,6 +199,26 @@ class ProductQueryModifier {
 		}
 
 		return array_values( $meta_query );
+	}
+
+	/**
+	 * Remove clause filters after the query has run.
+	 *
+	 * @since 2.0.0
+	 * @internal Hook callback for `posts_results`.
+	 *
+	 * @param array     $posts Posts array.
+	 * @param \WP_Query $query WP Query.
+	 * @return array Unmodified posts.
+	 */
+	public function cleanup_clause_filters( $posts, $query ) {
+		remove_filter( 'posts_join', array( $this, 'add_product_table_join' ), 10 );
+		remove_filter( 'posts_where', array( $this, 'add_stock_status_where' ), 10 );
+		remove_filter( 'posts_orderby', array( $this, 'add_custom_orderby' ), 10 );
+		remove_filter( 'posts_results', array( $this, 'cleanup_clause_filters' ), 10 );
+		$this->joined = false;
+
+		return $posts;
 	}
 
 	/**

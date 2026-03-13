@@ -513,12 +513,13 @@ class Commands {
 			$wpdb->insert(
 				$attrs_table,
 				array(
-					'product_id'     => $product_id,
-					'attribute_name' => $attr_data['name'] ?? $slug,
-					'is_visible'     => ! empty( $attr_data['is_visible'] ) ? 1 : 0,
-					'is_variation'   => ! empty( $attr_data['is_variation'] ) ? 1 : 0,
-					'is_taxonomy'    => ! empty( $attr_data['is_taxonomy'] ) ? 1 : 0,
-					'position'       => $attr_data['position'] ?? $position,
+					'product_id'   => $product_id,
+					'name'         => $attr_data['name'] ?? $slug,
+					'value'        => $attr_data['value'] ?? '',
+					'is_visible'   => ! empty( $attr_data['is_visible'] ) ? 1 : 0,
+					'is_variation' => ! empty( $attr_data['is_variation'] ) ? 1 : 0,
+					'is_taxonomy'  => ! empty( $attr_data['is_taxonomy'] ) ? 1 : 0,
+					'position'     => $attr_data['position'] ?? $position,
 				)
 			);
 
@@ -528,22 +529,19 @@ class Commands {
 			if ( ! empty( $attr_data['is_taxonomy'] ) ) {
 				$terms = wp_get_post_terms( $product_id, $attr_data['name'], array( 'fields' => 'names' ) );
 				if ( ! is_wp_error( $terms ) ) {
-					$val_pos = 0;
 					foreach ( $terms as $term_name ) {
 						$wpdb->insert(
 							$values_table,
 							array(
-								'product_id'   => $product_id,
-								'attribute_id' => $attr_id,
-								'value'        => $term_name,
-								'position'     => $val_pos++,
+								'product_id'           => $product_id,
+								'product_attribute_id' => $attr_id,
+								'value'                => $term_name,
 							)
 						);
 					}
 				}
 			} elseif ( ! empty( $attr_data['value'] ) ) {
-				$values  = array_map( 'trim', explode( '|', $attr_data['value'] ) );
-				$val_pos = 0;
+				$values = array_map( 'trim', explode( '|', $attr_data['value'] ) );
 				foreach ( $values as $val ) {
 					if ( '' === $val ) {
 						continue;
@@ -551,10 +549,9 @@ class Commands {
 					$wpdb->insert(
 						$values_table,
 						array(
-							'product_id'   => $product_id,
-							'attribute_id' => $attr_id,
-							'value'        => $val,
-							'position'     => $val_pos++,
+							'product_id'           => $product_id,
+							'product_attribute_id' => $attr_id,
+							'value'                => $val,
 						)
 					);
 				}
@@ -583,7 +580,6 @@ class Commands {
 			return;
 		}
 
-		$position = 0;
 		foreach ( $raw as $download_key => $file_data ) {
 			$wpdb->insert(
 				$table,
@@ -592,7 +588,6 @@ class Commands {
 					'download_key' => sanitize_key( $download_key ),
 					'name'         => $file_data['name'] ?? '',
 					'file'         => $file_data['file'] ?? '',
-					'position'     => $position++,
 				)
 			);
 		}

@@ -119,7 +119,7 @@ class WPT_Bootstrap {
 	 * @since 2.0.0
 	 */
 	private function load_admin() {
-		require_once WPT_PLUGIN_DIR . 'includes/Admin/class-wpt-settings.php';
+		require_once WPT_PLUGIN_DIR . 'includes/admin/class-wpt-settings.php';
 
 		add_filter( 'woocommerce_get_settings_pages', function ( $settings ) {
 			$settings[] = new \WPT_Settings();

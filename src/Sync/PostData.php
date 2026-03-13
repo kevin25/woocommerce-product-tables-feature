@@ -47,10 +47,11 @@ class PostData {
 		// Clear caches first.
 		wp_cache_delete( 'woocommerce_product_' . $post_id, 'product' );
 		wp_cache_delete( $post_id, 'products' );
-		wp_cache_delete( 'wpt_product_row_' . $post_id, 'wpt' );
-		wp_cache_delete( 'wpt_product_attributes_' . $post_id, 'wpt' );
-		wp_cache_delete( 'wpt_product_downloads_' . $post_id, 'wpt' );
-		wp_cache_delete( 'wpt_product_relationships_' . $post_id, 'wpt' );
+		wp_cache_delete( 'woocommerce_product_attributes_' . $post_id, 'product' );
+		wp_cache_delete( 'woocommerce_product_downloads_' . $post_id, 'product' );
+		wp_cache_delete( 'woocommerce_product_relationships_' . $post_id, 'product' );
+		wp_cache_delete( 'woocommerce_product_variation_attribute_values_' . $post_id, 'product' );
+		wp_cache_delete( 'woocommerce_product_type_' . $post_id, 'product' );
 
 		// Delete from all custom tables.
 		$wpdb->delete( "{$wpdb->prefix}wpt_products", array( 'product_id' => $post_id ) );

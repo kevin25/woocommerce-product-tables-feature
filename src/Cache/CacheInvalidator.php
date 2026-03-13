@@ -114,12 +114,12 @@ class CacheInvalidator {
 		// Post meta cache.
 		wp_cache_delete( $product_id, 'post_meta' );
 
-		// WPT-specific caches.
-		wp_cache_delete( 'wpt_product_row_' . $product_id, 'wpt' );
-		wp_cache_delete( 'wpt_product_attributes_' . $product_id, 'wpt' );
-		wp_cache_delete( 'wpt_product_downloads_' . $product_id, 'wpt' );
-		wp_cache_delete( 'wpt_product_relationships_' . $product_id, 'wpt' );
-		wp_cache_delete( 'woocommerce_product_variation_attribute_values_' . $product_id, 'wpt' );
+		// WPT data store caches (stored in 'product' group).
+		wp_cache_delete( 'woocommerce_product_attributes_' . $product_id, 'product' );
+		wp_cache_delete( 'woocommerce_product_downloads_' . $product_id, 'product' );
+		wp_cache_delete( 'woocommerce_product_relationships_' . $product_id, 'product' );
+		wp_cache_delete( 'woocommerce_product_variation_attribute_values_' . $product_id, 'product' );
+		wp_cache_delete( 'woocommerce_product_type_' . $product_id, 'product' );
 
 		// Transients.
 		delete_transient( 'wc_product_children_' . $product_id );

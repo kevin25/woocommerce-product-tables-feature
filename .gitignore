@@ -19,3 +19,7 @@ wp-content/plugins/hello.php
 .idea
 vendor/
 node_modules/
+
+# macOS resource forks
+._*
+.DS_Store

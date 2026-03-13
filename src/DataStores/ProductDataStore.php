@@ -768,11 +768,7 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 
 			$visibility = $product->get_catalog_visibility();
 
-			if ( 'visible' === $visibility ) {
-				$terms[] = 'exclude-from-catalog';
-				$terms[] = 'exclude-from-search';
-				$terms   = array_diff( $terms, array( 'exclude-from-catalog', 'exclude-from-search' ) );
-			} elseif ( 'catalog' === $visibility ) {
+			if ( 'catalog' === $visibility ) {
 				$terms[] = 'exclude-from-search';
 			} elseif ( 'search' === $visibility ) {
 				$terms[] = 'exclude-from-catalog';
@@ -1671,6 +1667,9 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 				$product_id_with_stock
 			)
 		);
+
+		// Sync stock to postmeta for dual-write compatibility.
+		update_post_meta( $product_id_with_stock, '_stock', wc_stock_amount( $new_stock ) );
 
 		return wc_stock_amount( $new_stock );
 	}

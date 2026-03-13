@@ -111,8 +111,16 @@ class ProductSynchronizer {
 			return;
 		}
 
+		// Date columns are handled separately as timestamps below.
+		$date_columns = array( 'date_on_sale_from', 'date_on_sale_to' );
+
 		foreach ( $this->column_meta_map as $column => $meta_key ) {
 			if ( ! array_key_exists( $column, $row ) ) {
+				continue;
+			}
+
+			// Skip date columns — handled below as timestamps.
+			if ( in_array( $column, $date_columns, true ) ) {
 				continue;
 			}
 
@@ -160,11 +168,6 @@ class ProductSynchronizer {
 
 			case 'sold_individually':
 				return $value ? 'yes' : 'no';
-
-			case 'date_on_sale_from':
-			case 'date_on_sale_to':
-				// Handled separately as timestamps.
-				return null;
 
 			default:
 				return $value;
