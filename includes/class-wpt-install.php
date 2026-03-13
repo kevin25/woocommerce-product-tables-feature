@@ -55,7 +55,7 @@ class WPT_Install {
 		$tables = "
 CREATE TABLE {$wpdb->prefix}wpt_products (
 	product_id bigint(20) unsigned NOT NULL,
-	sku varchar(100) DEFAULT '',
+	sku varchar(100) DEFAULT NULL,
 	image_id bigint(20) unsigned DEFAULT 0,
 	height decimal(10,4) DEFAULT NULL,
 	width decimal(10,4) DEFAULT NULL,
@@ -82,7 +82,7 @@ CREATE TABLE {$wpdb->prefix}wpt_products (
 	sold_individually tinyint(1) NOT NULL DEFAULT 0,
 	purchase_note text DEFAULT NULL,
 	PRIMARY KEY  (product_id),
-	UNIQUE KEY sku (sku),
+	KEY sku (sku),
 	KEY type (type),
 	KEY price (price),
 	KEY stock_status_price (stock_status, price),

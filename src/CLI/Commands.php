@@ -478,8 +478,12 @@ class Commands {
 					$data[ $column ] = '' !== $value ? $value : 0;
 					break;
 
-				// NOT NULL string columns — use schema defaults.
+				// Nullable string — empty SKU stored as NULL.
 				case 'sku':
+					$data[ $column ] = '' !== $value ? $value : null;
+					break;
+
+				// NOT NULL string columns — use schema defaults.
 				case 'tax_class':
 					$data[ $column ] = '' !== $value ? $value : '';
 					break;
