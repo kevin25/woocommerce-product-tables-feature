@@ -1510,10 +1510,14 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 		$wp_query_args = parent::get_wp_query_args( $query_vars );
 
 		// Map custom table columns to a separate query array.
+		// Note: 'type' is intentionally excluded — it is already handled by the
+		// post_type mapping at line 1473 and via product_type taxonomy.  Including
+		// it here would add an INNER-JOIN-like filter on wpt_products that silently
+		// drops variations (or other types) whose rows are absent from the custom table.
 		$custom_table_columns = array(
 			'sku', 'price', 'regular_price', 'sale_price', 'stock_quantity',
 			'stock_status', 'average_rating', 'total_sales', 'virtual', 'downloadable',
-			'type', 'tax_class', 'tax_status', 'manage_stock', 'backorders',
+			'tax_class', 'tax_status', 'manage_stock', 'backorders',
 			'sold_individually', 'date_on_sale_from', 'date_on_sale_to',
 			'height', 'length', 'width', 'weight', 'image_id',
 			'low_stock_amount', 'rating_count',

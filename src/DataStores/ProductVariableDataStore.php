@@ -85,7 +85,7 @@ class ProductVariableDataStore extends ProductDataStore {
 			);
 
 			$visible_only_args                = $all_args;
-			$visible_only_args['post_status'] = 'publish';
+			$visible_only_args['status'] = 'publish';
 
 			if ( 'yes' === get_option( 'woocommerce_hide_out_of_stock_items' ) ) {
 				$visible_only_args['stock_status'] = 'instock';
