@@ -415,6 +415,16 @@ class Commands {
 
 		$data = array( 'product_id' => $product_id );
 
+		// Product type comes from taxonomy, not postmeta.
+		$terms = get_the_terms( $product_id, 'product_type' );
+		if ( ! empty( $terms ) && ! is_wp_error( $terms ) ) {
+			$data['type'] = sanitize_title( current( $terms )->name );
+		} else {
+			// Variations don't have the product_type taxonomy.
+			$post_type = get_post_type( $product_id );
+			$data['type'] = ( 'product_variation' === $post_type ) ? 'variation' : 'simple';
+		}
+
 		foreach ( $meta_to_column as $meta_key => $column ) {
 			$value = get_post_meta( $product_id, $meta_key, true );
 
