@@ -69,6 +69,8 @@ class ProductVariableDataStore extends ProductDataStore {
 		$children                = get_transient( $children_transient_name );
 
 		if ( empty( $children ) || ! is_array( $children ) || ! isset( $children['all'] ) || ! isset( $children['visible'] ) || $force_read ) {
+			$children = array(); // Prevent PHP 8.1+ deprecation when get_transient() returns false.
+
 			$all_args = $this->map_legacy_product_args(
 				array(
 					'parent'  => $product->get_id(),

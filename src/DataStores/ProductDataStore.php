@@ -1473,6 +1473,12 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 		$query_args['post_type']           = isset( $query_vars['type'] ) && 'variation' === $query_vars['type'] ? 'product_variation' : 'product';
 		$query_args['wpt_products_query']  = $custom_table_query;
 
+		// Optimise ID-only queries.
+		$return = $query_vars['return'] ?? 'objects';
+		if ( 'ids' === $return ) {
+			$query_args['fields'] = 'ids';
+		}
+
 		$results = new \WP_Query( $query_args );
 
 		// Remove filters.
@@ -1508,6 +1514,47 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 	 */
 	protected function get_wp_query_args( $query_vars ) {
 		$wp_query_args = parent::get_wp_query_args( $query_vars );
+
+		// WC_Data_Store_WP::get_wp_query_args() uses prefix_key() which turns
+		// WC product query vars into "post_<key>" strings.  Keys that are NOT
+		// valid WP_Query args (e.g. post_limit, post_return) fall through to
+		// meta_query, creating bogus "_limit = -1" conditions that exclude
+		// every post.  Fix by mapping them properly and removing the junk.
+		if ( isset( $query_vars['limit'] ) ) {
+			$wp_query_args['posts_per_page'] = (int) $query_vars['limit'];
+			unset( $wp_query_args['meta_query']['limit'] );
+		}
+
+		if ( isset( $query_vars['page'] ) ) {
+			$wp_query_args['paged'] = (int) $query_vars['page'];
+			unset( $wp_query_args['meta_query']['page'] );
+		}
+
+		if ( isset( $query_vars['orderby'] ) ) {
+			$wp_query_args['orderby'] = $query_vars['orderby'];
+			unset( $wp_query_args['meta_query']['orderby'] );
+		}
+
+		if ( isset( $query_vars['order'] ) ) {
+			$wp_query_args['order'] = $query_vars['order'];
+			unset( $wp_query_args['meta_query']['order'] );
+		}
+
+		// 'return', 'paginate', and 'type' are consumed by get_products(),
+		// not by WP_Query — just remove the bogus meta_queries.
+		unset(
+			$wp_query_args['meta_query']['return'],
+			$wp_query_args['meta_query']['paginate'],
+			$wp_query_args['meta_query']['type'],
+			$wp_query_args['meta_query']['category'],
+			$wp_query_args['meta_query']['tag'],
+			$wp_query_args['meta_query']['visibility'],
+			$wp_query_args['meta_query']['reviews_allowed'],
+			$wp_query_args['meta_query']['shipping_class_id'],
+			$wp_query_args['meta_query']['featured'],
+			$wp_query_args['meta_query']['download_limit'],
+			$wp_query_args['meta_query']['download_expiry']
+		);
 
 		// Map custom table columns to a separate query array.
 		// Note: 'type' is intentionally excluded — it is already handled by the
