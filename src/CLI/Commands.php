@@ -31,6 +31,9 @@ class Commands {
 			return;
 		}
 
+		// Ensure WPT_Install is available — it's not autoloaded (no namespace).
+		require_once WPT_PLUGIN_DIR . 'includes/class-wpt-install.php';
+
 		\WP_CLI::add_command( 'wpt migrate', array( $this, 'migrate' ) );
 		\WP_CLI::add_command( 'wpt rollback', array( $this, 'rollback' ) );
 		\WP_CLI::add_command( 'wpt status', array( $this, 'status' ) );
