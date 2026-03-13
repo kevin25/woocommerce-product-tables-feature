@@ -1611,7 +1611,7 @@ class ProductDataStore extends \WC_Data_Store_WP implements \WC_Object_Data_Stor
 	 * @param string $column    Column name.
 	 * @return array Array of ['value' => ..., 'compare' => '='].
 	 */
-	protected function parse_date_for_wp_query( $raw_value, $column ) {
+	public function parse_date_for_wp_query( $raw_value, $column ) {
 		if ( is_array( $raw_value ) ) {
 			$parsed = array();
 
